@@ -1,0 +1,143 @@
+# ************************************************************************************************
+# Warning: YAML source code for Canvas Apps should only be used to review changes made within Power Apps Studio and for minor edits (Preview).
+# Use the maker portal to create and edit your Power Apps.
+# 
+# The schema file for Canvas Apps is available at https://go.microsoft.com/fwlink/?linkid=2304907
+# 
+# For more information, visit https://go.microsoft.com/fwlink/?linkid=2292623
+# ************************************************************************************************
+App:
+  Properties:
+    OnStart: |+
+      =// === Current user data ===
+      Set(
+          gblCurrentUserProfile,
+          Office365Users.MyProfileV2()
+      );
+      Set(
+          gblCurrentUserEmail,
+          Coalesce(
+              gblCurrentUserProfile.mail,
+              gblCurrentUserProfile.userPrincipalName
+          )
+      );
+      Set(
+          gblCurrentUserName,
+          gblCurrentUserProfile.displayName
+      );
+
+      // === Period settings (from SharePoint list GratitudeSettings) ===
+      Set(
+          gblSettings,
+          First(GratitudeSettings)
+      );
+      Set(gblPeriodStart, gblSettings.PeriodStart);
+      Set(gblPeriodEnd,   gblSettings.PeriodEnd);
+      Set(gblMaxNotes,    gblSettings.MaxNotesperPeriod);   // Names to match exactely with list, this is for settings
+
+      // === Notes for the current period (from GratitudeNotes)
+      //     + add calculated columns ToEmail and ToDisplayName for easier grouping and display
+      ClearCollect(
+          colNotesThisPeriod,
+          AddColumns(
+              Filter(
+                  GratitudeNotes,
+                  SentOn >= gblPeriodStart &&
+                  SentOn <= gblPeriodEnd &&
+                  IsVisible = true
+              ) As G,
+              ToEmail,        G.'To'.Email,
+              ToDisplayName,  G.'To'.DisplayName
+          )
+      );
+
+      // === Receivers ranking (simple version using Distinct + ForAll) ===
+      // colNotesThisPeriod already has:
+      //   - ToEmail        (text)
+      //   - ToDisplayName  (text)
+
+      ClearCollect(
+          colTopReceivers,
+          ForAll(
+              Distinct(
+                  colNotesThisPeriod,
+                  ToEmail              // each record here has [Result] = ToEmail
+              ),
+              {
+                  ToEmail:      Result,
+                  ReceiverName: LookUp(
+                                    colNotesThisPeriod,
+                                    ToEmail = Result,
+                                    ToDisplayName
+                                ),
+                  NotesCount:   CountIf(
+                                    colNotesThisPeriod,
+                                    ToEmail = Result
+                                )
+              }
+          )
+      );
+
+      // === Top 3 receivers with Rank (1, 2, 3) ===
+      ClearCollect(
+          colTopReceiversRanked,
+          AddColumns(
+              FirstN(
+                  Sort(
+                      colTopReceivers,
+                      NotesCount,
+                      SortOrder.Descending       // <- importante
+                  ),
+                  3
+              ),
+              Rank,                              // sin comillas
+              CountRows(
+                  Filter(
+                      colTopReceivers,
+                      NotesCount >= ThisRecord.NotesCount
+                  )
+              )
+          )
+      );
+
+      // === Carousel data (latest notes sorted by date) ===
+      ClearCollect(
+          colNotesCarousel,
+          Sort(
+              colNotesThisPeriod,
+              SentOn,
+              SortOrder.Descending
+          )
+      );
+
+      // === Initialize carousel index and current note ===
+      Set(
+          varCurrentNoteIndex,
+          If(
+              CountRows(colNotesCarousel) > 0,
+              1,
+              0
+          )
+      );
+
+      If(
+          CountRows(colNotesCarousel) > 0,
+          Set(
+              gblCurrentNote,
+              First(colNotesCarousel)
+          ),
+          Set(
+              gblCurrentNote,
+              Blank()
+          )
+      );
+
+      // === Admin users (adjust emails as needed) ===
+      Set(
+          gblIsAdmin,
+          gblCurrentUserEmail in [
+              "admin@example.com"
+          ]
+      );
+    Theme: |+
+      =PowerAppsTheme

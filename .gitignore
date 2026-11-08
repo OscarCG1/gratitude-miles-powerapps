@@ -1,0 +1,11 @@
+*.msapp
+*.msapp.zip
+*.pptm
+.env
+*.log
+.DS_Store
+private/
+exports/
+*.dmg
+*.deb
+!sample-data/*.csv
